@@ -28,22 +28,22 @@ import mongoose from 'mongoose';
  */
 const connectDB = async () => {
   try {
-    // Attempt to connect to MongoDB using the connection string from .env
-    // mongoose.connect() returns a connection object if successful
-    // 'await' pauses execution until connection is established or fails
-    const conn = await mongoose.connect(process.env.MONGODB_URI);
+    const MONGODB_URI = process.env.MONGODB_URI;
+
+    // Safety check: exit if URI is undefined
+    if (!MONGODB_URI) {
+      console.error("Error: MONGODB_URI is not defined in .env");
+      process.exit(1);
+    }
+
+    // Attempt to connect to MongoDB using the connection string
+    const conn = await mongoose.connect(MONGODB_URI);
 
     // If connection succeeds, log the database host for confirmation
-    // conn.connection.host shows which MongoDB server we're connected to
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     // If connection fails (wrong password, network issue, etc.)
-    // Log the error message to help with debugging
     console.error(`Error: ${error.message}`);
-
-    // Exit the application with error code 1
-    // This stops the server because we can't run without database connection
-    // Code 1 indicates the process exited due to an error
     process.exit(1);
   }
 };
