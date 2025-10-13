@@ -13,7 +13,8 @@
 
 import { useState, useEffect } from "react"; // React hooks for state and side effects
 import axios from "axios"; // HTTP client for making API requests
-import { Trash2, Plus } from "lucide-react"; // Icon components for UI
+import { Plus } from "lucide-react"; // Icon components for UI
+import TodoItem from "./components/TodoItem"; // Child component for individual todo items
 
 /**
  * TYPESCRIPT INTERFACE
@@ -26,7 +27,7 @@ import { Trash2, Plus } from "lucide-react"; // Icon components for UI
  * - text: The task description
  * - createdAt: ISO timestamp string when todo was created
  */
-interface Todo {
+export interface Todo {
   _id: string;
   text: string;
   createdAt: string;
@@ -206,6 +207,50 @@ function App() {
     }
   };
 
+  /**
+   * editTodo - PATCH Request
+   *
+   * PURPOSE: Update a specific todo in the database
+   *
+   * PROCESS:
+   * 1. Send PATCH request to backend with todo ID
+   * 2. If successful, update todo in local state array
+   * 3. React automatically re-renders with updated list
+   *
+   * PARAMETERS:
+   * @param id - MongoDB ObjectId of the todo to edit
+   * @param text - Updated text for the todo
+   *
+   * CALLED WHEN: User clicks the edit icon button next to a todo
+   */
+  const editTodo = async (id: string, text: string) => {
+    try {
+      // Send PATCH request to backend with specific todo ID in URL and updated text
+      // Example URL: http://localhost:5000/api/todos/507f1f77bcf86cd799439011
+      // Example body: { text: "Updated task description" }
+      await axios.patch(`${API_URL}/${id}`, { text });
+
+      // Map through todos and update the one that matches the edited id
+      setTodos(
+        todos.map((todo) => (todo._id === id ? { ...todo, text } : todo))
+      );
+
+      // Return null to indicate success (no error)
+      return null;
+    } catch (error) {
+      // If update fails, show error message
+      let message = "An error occurred while editing the todo";
+
+      // Check if error is an Axios error with a response message
+      if (axios.isAxiosError(error) && error.response?.data?.message) {
+        message = error.response.data.message;
+      }
+
+      // Return the error message to the caller
+      return message;
+    }
+  };
+
   // ========================================
   // EVENT HANDLERS
   // ========================================
@@ -295,17 +340,12 @@ function App() {
                   key={todo._id} // React requires unique 'key' for list items
                   className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-slate-50 gap-2 sm:gap-0"
                 >
-                  {/* Todo text display */}
-                  <span className="text-slate-800 text-lg break-words">{todo.text}</span>
-
-                  {/* Delete button */}
-                  <button
-                    onClick={() => deleteTodo(todo._id)} // Pass todo's ID to delete function
-                    className="w-full sm:w-auto px-4 py-2"
-                    title="Delete task"
-                  >
-                    <Trash2 size={20} /> {/* Trash icon */}
-                  </button>
+                  {/* Todo item component */}
+                  <TodoItem
+                    todo={todo}
+                    deleteTodo={deleteTodo}
+                    editTodo={editTodo}
+                  />
                 </li>
               ))}
             </ul>

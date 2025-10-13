@@ -154,6 +154,65 @@ app.delete('/api/todos/:id', async (req, res) => {
   }
 });
 
+/**
+ * PATCH /api/todos/:id
+ * 
+ * EXPECTED REQUEST BODY:
+ * { text: "Task description" }
+ *
+ * PURPOSE: Update a specific todo item in the database
+ *
+ * URL PARAMETER:
+ * :id - MongoDB ObjectId of the todo to delete
+ * Example: /api/todos/507f1f77bcf86cd799439011
+ *
+ * PROCESS:
+ * 1. Extract todo ID from URL parameter
+ * 2. Find and update the todo in one operation
+ * 3. Check if todo was found
+ * 4. Return success message
+ *
+ * RESPONSE: Success message or error
+ * Example: { message: "Todo deleted successfully" }
+ */
+app.patch('/api/todos/:id', async (req, res) => {
+  try {
+    // Extract the text field from the request body
+    const { text } = req.body;
+
+    // Validate: text must not be empty or just whitespace
+    if (!text || !text.trim()) {
+      return res.status(400).json({ message: 'Text is required' });
+    }
+
+    // Validate: text must not be a duplicate of another todo (case-insensitive)
+    const duplicate = await Todo.findOne({
+      text: { $regex: `^${text.trim()}$`, $options: 'i' },
+      _id: { $ne: req.params.id }
+    });
+    if (duplicate) {
+      return res.status(400).json({ message: 'Duplicate todo text' });
+    }
+
+    // Update the todo's text
+    const todo = await Todo.findByIdAndUpdate(
+      req.params.id,
+      { text: text.trim() },
+      { new: true }
+    );
+
+    // If no todo was found with that ID, return 404 status (not found)
+    if (!todo) {
+      return res.status(404).json({ message: 'Todo not found' });
+    }
+
+    // If update was successful, send updated todo
+    res.json(todo);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // ========================================
 // START SERVER
 // ========================================
