@@ -284,19 +284,19 @@ function App() {
 
   return (
     // Main container: Full screen height with gradient background
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-12 px-3">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-12 px-3 sm:px-6">
       {/* Content wrapper: Max width container, centered */}
       <div className="max-w-2xl mx-auto">
         {/* ========== HEADER SECTION ========== */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-slate-800 mb-3">To-Do App</h1>
-          <p className="text-slate-600">Manage your tasks efficiently</p>
+          <h1 className="text-3xl sm:text-4xl font-bold text-slate-800 mb-3">To-Do App</h1>
+          <p className="text-sm sm:text-base text-slate-600">Manage your tasks efficiently</p>
         </div>
 
         {/* ========== ADD TODO INPUT SECTION ========== */}
         {/* White card containing input field and add button */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             {/* Input field for typing new todos */}
             <input
               type="text"
@@ -338,7 +338,7 @@ function App() {
               {todos.map((todo) => (
                 <li
                   key={todo._id} // React requires unique 'key' for list items
-                  className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-slate-50 gap-2 sm:gap-0"
                 >
                   {/* Todo item component */}
                   <TodoItem
