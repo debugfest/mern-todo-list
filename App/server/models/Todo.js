@@ -42,6 +42,12 @@ const todoSchema = new mongoose.Schema({
     trim: true          // Removes leading/trailing whitespace automatically
   },
 
+  // Boolean to mark the todo task as completed
+  completed: {
+    type: Boolean,
+    default: false // New todos are not completed by default
+  },
+
   // Timestamp for when this todo was created
   createdAt: {
     type: Date,          // Stores date and time

@@ -158,55 +158,80 @@ app.delete('/api/todos/:id', async (req, res) => {
  * PATCH /api/todos/:id
  * 
  * EXPECTED REQUEST BODY:
- * { text: "Task description" }
+ * { text?: "Task description", completed?: true/false }
  *
- * PURPOSE: Update a specific todo item in the database
+ * PURPOSE: Partially update fields of a specific todo item in the database (e.g., text or completed status)
  *
  * URL PARAMETER:
- * :id - MongoDB ObjectId of the todo to delete
+ * :id - MongoDB ObjectId of the todo to update
  * Example: /api/todos/507f1f77bcf86cd799439011
  *
  * PROCESS:
  * 1. Extract todo ID from URL parameter
- * 2. Find and update the todo in one operation
- * 3. Check if todo was found
- * 4. Return success message
+ * 2. Validate and update only the fields provided in the request body (text and/or completed)
+ * 3. Check for errors (empty text, duplicate text, invalid completed value)
+ * 4. Find and update the todo in one operation
+ * 5. Check if todo was found
+ * 6. Return updated todo or error message
  *
- * RESPONSE: Success message or error
- * Example: { message: "Todo deleted successfully" }
+ * RESPONSE: Updated todo object or error
+ * Example: { _id: "...", text: "New task", completed: true, ... }
  */
 app.patch('/api/todos/:id', async (req, res) => {
   try {
-    // Extract the text field from the request body
-    const { text } = req.body;
+    const updateFields = {};
+    // Validate and set text if present
+    if ("text" in req.body) {
+      const text = req.body.text;
+      if (!text || !text.trim()) {
+        return res.status(400).json({ message: 'Text is required' });
+      }
+      // Check for duplicate text
+      const duplicate = await Todo.findOne({
+        text: { $regex: `^${text.trim()}$`, $options: 'i' },
+        _id: { $ne: req.params.id }
+      });
+      if (duplicate) {
+        return res.status(400).json({ message: 'Duplicate todo text' });
+      }
+      // Set text in the updatedFields
+      updateFields.text = text.trim();
+    }
+    
+    // Validate and set completed if present
+    if ("completed" in req.body) {
+      const completed = req.body.completed;
 
-    // Validate: text must not be empty or just whitespace
-    if (!text || !text.trim()) {
-      return res.status(400).json({ message: 'Text is required' });
+      // Validate if completed in undefined
+      if (typeof completed === "undefined") {
+        return res.status(400).json({ message: "Completed field is required" });
+      }
+
+      // VAlidate if completed is a boolean
+      if (typeof completed !== "boolean") {
+        return res.status(400).json({ message: "Completed must be a boolean" });
+      }
+
+      // Set completed in the updatedFields
+      updateFields.completed = completed;
+    }
+    
+    // If no valid fields to update
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).json({ message: "No valid fields to update" });
     }
 
-    // Validate: text must not be a duplicate of another todo (case-insensitive)
-    const duplicate = await Todo.findOne({
-      text: { $regex: `^${text.trim()}$`, $options: 'i' },
-      _id: { $ne: req.params.id }
-    });
-    if (duplicate) {
-      return res.status(400).json({ message: 'Duplicate todo text' });
-    }
-
-    // Update the todo's text
+    // Update the todo
     const todo = await Todo.findByIdAndUpdate(
       req.params.id,
-      { text: text.trim() },
+      updateFields,
       { new: true }
     );
-
-    // If no todo was found with that ID, return 404 status (not found)
+    
     if (!todo) {
       return res.status(404).json({ message: 'Todo not found' });
     }
-
-    // If update was successful, send updated todo
+    
     res.json(todo);
   } catch (error) {
     res.status(500).json({ message: error.message });
