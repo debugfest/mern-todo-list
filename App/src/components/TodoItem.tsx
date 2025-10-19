@@ -10,7 +10,7 @@
  * - Event Handlers: Functions that handle user interactions (e.g., button clicks)
  */
 
-import { Trash2, Edit, Save, XCircle } from "lucide-react"; // Icon components for UI
+import { Trash2, Edit, Save, XCircle, CheckCircle, Circle } from "lucide-react"; // Icon components for UI
 import React, { useState } from "react"; // React library and useState hook for managing component state
 import { Todo } from "../App"; // Importing the Todo type from App for type safety
 
@@ -31,7 +31,7 @@ import { Todo } from "../App"; // Importing the Todo type from App for type safe
 interface TodoItemProps {
   todo: Todo;
   deleteTodo: (id: string) => void;
-  editTodo: (id: string, text: string) => Promise<string | null>;
+  editTodo: (id: string, text?: string, completed?: boolean) => Promise<string | null>;
 }
 
 /**
@@ -41,7 +41,7 @@ interface TodoItemProps {
  * Manages its own state for editing and displays the todo text.
  */
 const TodoItem: React.FC<TodoItemProps> = ({
-  todo: { _id, text },
+  todo: { _id, text, completed },
   deleteTodo,
   editTodo,
 }) => {
@@ -82,7 +82,7 @@ const TodoItem: React.FC<TodoItemProps> = ({
    */
   const handleSaveClick = async () => {
     // Call editTodo and await potential error message
-    const errorMsg = await editTodo(_id, editText);
+    const errorMsg = await editTodo(_id, editText, completed);
 
     // If there's an error message, display it; otherwise, exit edit mode
     if (errorMsg) {
@@ -155,6 +155,21 @@ const TodoItem: React.FC<TodoItemProps> = ({
     }
   };
 
+  /**
+   * handleToggleComplete - Toggle Completed Status Handler
+   *
+   * PURPOSE: Toggle the completed status of the todo item
+   *
+   * PROCESS:
+   * 1. Call editTodo function with todo ID and toggled completed status
+   *
+   * UX IMPROVEMENT: Users can easily mark tasks as completed or incomplete
+   */
+  const handleToggleComplete = async () => {
+    // Call editTodo to toggle the completed status
+    await editTodo(_id, undefined, !completed);
+  };
+
   // ========================================
   // JSX RENDER - UI STRUCTURE
   // ========================================
@@ -210,7 +225,9 @@ const TodoItem: React.FC<TodoItemProps> = ({
         <>
           {/* ========== VIEW MODE SECTION ========== */}
           {/* Todo text display */}
-          <span className="text-slate-800 text-lg">{text}</span>
+          <span className={`text-lg ${completed ? "line-through text-gray-400" : "text-slate-800"}`}>
+            {text}
+          </span>
 
           {/* Edit and Delete buttons */}
           <div className="flex items-center space-x-1">
@@ -232,6 +249,18 @@ const TodoItem: React.FC<TodoItemProps> = ({
             >
               <Edit size={20} />{" "}
               {/* Edit icon for edit action from lucide-react */}
+            </button>
+
+            {/* Mark as completed toggle button */}
+            <button
+              onClick={handleToggleComplete}
+              className={`p-2 rounded-lg transition-colors ${
+                completed ? "text-green-600 hover:text-green-700 hover:bg-green-50" : "text-gray-600 hover:text-gray-700 hover:bg-gray-50"
+              }`}
+              title={completed ? "Mark as incomplete" : "Mark as completed"}
+            >
+              {/* CheckCircle icon for completed tasks, Circle icon for incomplete tasks */}
+              {completed ? <CheckCircle size={20} /> : <Circle size={20} />}
             </button>
           </div>
         </>

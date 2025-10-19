@@ -30,6 +30,7 @@ import TodoItem from "./components/TodoItem"; // Child component for individual 
 export interface Todo {
   _id: string;
   text: string;
+  completed: boolean;
   createdAt: string;
 }
 
@@ -72,6 +73,15 @@ function App() {
    * Used to disable buttons and show loading states during operations
    */
   const [loading, setLoading] = useState(false);
+
+  /**
+   * isCompleted: Boolean flag to track if a todo is completed
+   * setIsCompleted: Function to update isCompleted state
+   * Initial value: false
+   *
+   * Used to visually indicate completed tasks
+   */
+  const [isCompleted, setIsCompleted] = useState(false);
 
   // ========================================
   // API CONFIGURATION
@@ -223,17 +233,28 @@ function App() {
    *
    * CALLED WHEN: User clicks the edit icon button next to a todo
    */
-  const editTodo = async (id: string, text: string) => {
+  const editTodo = async (id: string, text?: string, completed?: boolean) => {
     try {
-      // Send PATCH request to backend with specific todo ID in URL and updated text
+      // Send PATCH request to backend with specific todo ID in URL and updated text and/or completed status
       // Example URL: http://localhost:5000/api/todos/507f1f77bcf86cd799439011
-      // Example body: { text: "Updated task description" }
-      await axios.patch(`${API_URL}/${id}`, { text });
+      // Example body for text: { text: "Updated task description" }
+      // Example body for completed: { completed: true }
 
-      // Map through todos and update the one that matches the edited id
-      setTodos(
-        todos.map((todo) => (todo._id === id ? { ...todo, text } : todo))
-      );
+      if (text !== undefined && text !== null && text.trim() !== "") {
+        await axios.patch(`${API_URL}/${id}`, { text });
+
+        // Map through todos and update text of the one that matches the edited id
+        setTodos(
+          todos.map((todo) => (todo._id === id ? { ...todo, text } : todo))
+        );
+      } else if (completed !== undefined && completed !== null) {
+        await axios.patch(`${API_URL}/${id}`, { completed });
+
+        // Map through todos and update completed status of the one that matches the edited id
+        setTodos(
+          todos.map((todo) => (todo._id === id ? { ...todo, completed } : todo))
+        );
+      }
 
       // Return null to indicate success (no error)
       return null;
