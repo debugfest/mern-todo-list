@@ -59,9 +59,18 @@ app.use(express.json());
  */
 app.get('/api/todos', async (req, res) => {
   try {
-    // Find all todos in database and sort by createdAt in descending order (-1)
-    // This means newest todos appear first in the list
-    const todos = await Todo.find().sort({ createdAt: -1 });
+    // Optional filters and range params
+    const { start, end } = req.query;
+
+    const filter = {};
+    if (start || end) {
+      filter.dueDate = {};
+      if (start) filter.dueDate.$gte = new Date(String(start));
+      if (end) filter.dueDate.$lte = new Date(String(end));
+    }
+
+    // Find todos and sort by createdAt desc
+    const todos = await Todo.find(filter).sort({ createdAt: -1 });
 
     // Send the todos array as JSON response with 200 status (success)
     res.json(todos);
@@ -91,9 +100,8 @@ app.get('/api/todos', async (req, res) => {
  */
 app.post('/api/todos', async (req, res) => {
   try {
-    // Extract the text field from the request body
-    // Request body is automatically parsed by express.json() middleware
-    const { text } = req.body;
+    // Extract fields from the request body
+    const { text, dueDate, recurrence } = req.body;
 
     // Validation: Check if text is provided
     // If not, return 400 status (bad request) with error message
@@ -101,9 +109,12 @@ app.post('/api/todos', async (req, res) => {
       return res.status(400).json({ message: 'Text is required' });
     }
 
-    // Create a new Todo instance with the provided text
-    // MongoDB will automatically generate _id and add createdAt timestamp
-    const todo = new Todo({ text });
+    // Create a new Todo instance with optional scheduling fields
+    const todo = new Todo({
+      text,
+      dueDate: dueDate ? new Date(dueDate) : null,
+      recurrence: recurrence || 'none'
+    });
 
     // Save the new todo to MongoDB database
     // This is an async operation that waits for database confirmation
@@ -212,8 +223,21 @@ app.patch('/api/todos/:id', async (req, res) => {
         return res.status(400).json({ message: "Completed must be a boolean" });
       }
 
-      // Set completed in the updatedFields
+      // Set completed and completedAt
       updateFields.completed = completed;
+      updateFields.completedAt = completed ? new Date() : null;
+    }
+
+    // Optional updates for due date and recurrence
+    if ("dueDate" in req.body) {
+      updateFields.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
+    }
+    if ("recurrence" in req.body) {
+      const allowed = ["none", "daily", "weekly", "monthly"];
+      if (!allowed.includes(req.body.recurrence)) {
+        return res.status(400).json({ message: "Invalid recurrence" });
+      }
+      updateFields.recurrence = req.body.recurrence;
     }
     
     // If no valid fields to update
@@ -233,6 +257,165 @@ app.patch('/api/todos/:id', async (req, res) => {
     }
     
     res.json(todo);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * GET /api/analytics
+ * Basic analytics metrics for the current tasks
+ */
+app.get('/api/analytics', async (req, res) => {
+  try {
+    const [total, completedCount, withDueDate] = await Promise.all([
+      Todo.countDocuments({}),
+      Todo.countDocuments({ completed: true }),
+      Todo.find({ dueDate: { $ne: null } }, { createdAt: 1, completedAt: 1 }).lean()
+    ]);
+
+    // Average time to complete (ms)
+    let durations = [];
+    for (const t of withDueDate) {
+      if (t.completedAt) {
+        durations.push(new Date(t.completedAt).getTime() - new Date(t.createdAt).getTime());
+      }
+    }
+    const avgMs = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+
+    // Simple daily completion streak (consecutive days with at least 1 completion)
+    const recent = await Todo.find({ completedAt: { $ne: null } }, { completedAt: 1 }).sort({ completedAt: -1 }).lean();
+    const days = new Set(recent.map(r => new Date(r.completedAt).toISOString().slice(0, 10)));
+    let streak = 0;
+    let cursor = new Date();
+    for (;;) {
+      const key = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate())).toISOString().slice(0, 10);
+      if (days.has(key)) {
+        streak += 1;
+        cursor.setUTCDate(cursor.getUTCDate() - 1);
+      } else {
+        break;
+      }
+    }
+
+    res.json({
+      total,
+      completed: completedCount,
+      completionRate: total ? +(completedCount / total).toFixed(2) : 0,
+      averageTimeToCompleteMs: avgMs,
+      dailyCompletionStreak: streak
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * GET /api/calendar
+ * Query tasks by due date range
+ * Query: start=ISO&end=ISO
+ */
+app.get('/api/calendar', async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    if (!start || !end) {
+      return res.status(400).json({ message: 'start and end are required' });
+    }
+    const items = await Todo.find({
+      dueDate: { $gte: new Date(String(start)), $lte: new Date(String(end)) }
+    }).sort({ dueDate: 1 }).lean();
+    res.json(items);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * GET /api/todos/export
+ * Export todos as JSON or CSV
+ */
+app.get('/api/todos/export', async (req, res) => {
+  try {
+    const { format = 'json' } = req.query;
+    const todos = await Todo.find({}).sort({ createdAt: -1 }).lean();
+    if (String(format).toLowerCase() === 'csv') {
+      const headers = ['_id','text','completed','createdAt','completedAt','dueDate','recurrence'];
+      const rows = [headers.join(',')].concat(
+        todos.map(t => headers.map(h => {
+          const v = t[h] instanceof Date ? new Date(t[h]).toISOString() : (t[h] ?? '');
+          const s = String(v).replace(/"/g, '""');
+          return `"${s}"`;
+        }).join(','))
+      );
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="todos.csv"');
+      return res.send(rows.join('\n'));
+    }
+    res.json(todos);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * POST /api/todos/import
+ * Import todos from JSON array [{text, completed, dueDate, recurrence}]
+ */
+app.post('/api/todos/import', async (req, res) => {
+  try {
+    const body = req.body;
+    if (!Array.isArray(body)) {
+      return res.status(400).json({ message: 'Expected an array of todos' });
+    }
+    const docs = body.map((t) => ({
+      text: t.text,
+      completed: !!t.completed,
+      completedAt: t.completed ? (t.completedAt ? new Date(t.completedAt) : new Date()) : null,
+      dueDate: t.dueDate ? new Date(t.dueDate) : null,
+      recurrence: t.recurrence && ["none","daily","weekly","monthly"].includes(t.recurrence) ? t.recurrence : 'none'
+    })).filter(d => d.text && String(d.text).trim().length > 0);
+    const created = await Todo.insertMany(docs, { ordered: false });
+    res.status(201).json({ imported: created.length });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * POST /api/todos/generate-recurring
+ * Generate next occurrences for recurring tasks based on dueDate
+ */
+app.post('/api/todos/generate-recurring', async (req, res) => {
+  try {
+    const now = new Date();
+    const recur = await Todo.find({ recurrence: { $ne: 'none' }, dueDate: { $ne: null } });
+    let createdCount = 0;
+    for (const t of recur) {
+      const last = t.lastGeneratedAt ? new Date(t.lastGeneratedAt) : null;
+      const due = new Date(t.dueDate);
+      // If the current due date is past and the last generation is not today, create next occurrence
+      const shouldGenerate = due.getTime() <= now.getTime() && (!last || last.toDateString() !== now.toDateString());
+      if (!shouldGenerate) continue;
+
+      // Calculate next due date
+      const next = new Date(due);
+      if (t.recurrence === 'daily') next.setDate(next.getDate() + 1);
+      if (t.recurrence === 'weekly') next.setDate(next.getDate() + 7);
+      if (t.recurrence === 'monthly') next.setMonth(next.getMonth() + 1);
+
+      await Todo.create({
+        text: t.text,
+        dueDate: next,
+        recurrence: t.recurrence,
+        completed: false,
+        completedAt: null
+      });
+
+      t.lastGeneratedAt = now;
+      await t.save();
+      createdCount += 1;
+    }
+    res.json({ created: createdCount });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
