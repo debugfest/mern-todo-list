@@ -48,6 +48,31 @@ const todoSchema = new mongoose.Schema({
     default: false // New todos are not completed by default
   },
 
+  // Timestamp when the todo was completed (for analytics)
+  completedAt: {
+    type: Date,
+    default: null
+  },
+
+  // Optional due date for scheduling and calendar views
+  dueDate: {
+    type: Date,
+    default: null
+  },
+
+  // Recurrence rule: none | daily | weekly | monthly
+  recurrence: {
+    type: String,
+    enum: ["none", "daily", "weekly", "monthly"],
+    default: "none"
+  },
+
+  // Internal field to track the last time a next occurrence was generated
+  lastGeneratedAt: {
+    type: Date,
+    default: null
+  },
+
   // Timestamp for when this todo was created
   createdAt: {
     type: Date,          // Stores date and time

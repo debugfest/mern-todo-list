@@ -41,7 +41,7 @@ interface TodoItemProps {
  * Manages its own state for editing and displays the todo text.
  */
 const TodoItem: React.FC<TodoItemProps> = ({
-  todo: { _id, text, completed },
+  todo: { _id, text, completed, dueDate, recurrence },
   deleteTodo,
   editTodo,
 }) => {
@@ -224,10 +224,19 @@ const TodoItem: React.FC<TodoItemProps> = ({
       ) : (
         <>
           {/* ========== VIEW MODE SECTION ========== */}
-          {/* Todo text display */}
-          <span className={`text-lg ${completed ? "line-through text-gray-400" : "text-slate-800"}`}>
-            {text}
-          </span>
+          {/* Todo text display with meta */}
+          <div className="flex flex-col">
+            <span className={`text-lg ${completed ? "line-through text-gray-400" : "text-slate-800"}`}>
+              {text}
+            </span>
+            {(dueDate || recurrence) && (
+              <span className="text-xs text-slate-500 mt-0.5">
+                {dueDate ? `Due: ${new Date(dueDate).toLocaleString()}` : null}
+                {dueDate && recurrence && recurrence !== 'none' ? ' • ' : ''}
+                {recurrence && recurrence !== 'none' ? `Repeats: ${recurrence}` : ''}
+              </span>
+            )}
+          </div>
 
           {/* Edit and Delete buttons */}
           <div className="flex items-center space-x-1">

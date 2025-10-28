@@ -32,6 +32,9 @@ export interface Todo {
   text: string;
   completed: boolean;
   createdAt: string;
+  completedAt?: string | null;
+  dueDate?: string | null;
+  recurrence?: 'none' | 'daily' | 'weekly' | 'monthly';
 }
 
 /**
@@ -83,6 +86,14 @@ function App() {
    */
   const [isCompleted, setIsCompleted] = useState(false);
 
+  // New UI state
+  const [dueDateInput, setDueDateInput] = useState<string>("");
+  const [recurrenceInput, setRecurrenceInput] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [analytics, setAnalytics] = useState<{ total: number; completed: number; completionRate: number; averageTimeToCompleteMs: number; dailyCompletionStreak: number; } | null>(null);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [toast, setToast] = useState<string>("");
+
   // ========================================
   // API CONFIGURATION
   // ========================================
@@ -92,6 +103,7 @@ function App() {
    * This is where our Express server is running and listening for requests
    */
   const API_URL = "http://localhost:5000/api/todos";
+  const ANALYTICS_URL = "http://localhost:5000/api/analytics";
 
   // ========================================
   // SIDE EFFECTS (useEffect)
@@ -106,7 +118,11 @@ function App() {
    * PURPOSE: Fetch all existing todos from database when app loads
    */
   useEffect(() => {
-    fetchTodos();
+    // generate next occurrences, then fetch todos
+    axios.post(`${API_URL}/generate-recurring`).catch(() => undefined).finally(() => fetchTodos());
+    // reminder checker every 30s
+    const id = setInterval(checkReminders, 30000);
+    return () => clearInterval(id);
   }, []); // Empty array means "only run once on mount"
 
   // ========================================
@@ -167,7 +183,7 @@ function App() {
     try {
       // Send POST request with the todo text in request body
       // Backend expects: { text: "task description" }
-      const response = await axios.post(API_URL, { text: inputText });
+      const response = await axios.post(API_URL, { text: inputText, dueDate: dueDateInput || undefined, recurrence: recurrenceInput });
 
       // response.data contains the newly created todo with _id from database
       // Add new todo to START of array using spread operator [newTodo, ...oldTodos]
@@ -176,6 +192,8 @@ function App() {
 
       // Clear the input field after successful creation
       setInputText("");
+      setDueDateInput("");
+      setRecurrenceInput('none');
     } catch (error) {
       // If request fails, log the error
       console.error("Error adding todo:", error);
@@ -272,6 +290,67 @@ function App() {
     }
   };
 
+  /**
+   * fetchAnalytics - GET aggregated stats
+   */
+  const fetchAnalytics = async () => {
+    try {
+      const res = await axios.get(ANALYTICS_URL);
+      setAnalytics(res.data);
+    } catch (e) {
+      console.error('Error fetching analytics', e);
+    }
+  };
+
+  /**
+   * exportTodos - download JSON or CSV
+   */
+  const exportTodos = async (format: 'json' | 'csv') => {
+    try {
+      const res = await axios.get(`${API_URL}/export`, { params: { format }, responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = format === 'csv' ? 'todos.csv' : 'todos.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Export failed', e);
+    }
+  };
+
+  /**
+   * importTodos - upload JSON file and import
+   */
+  const importTodos = async (file: File) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      await axios.post(`${API_URL}/import`, data);
+      fetchTodos();
+    } catch (e) {
+      console.error('Import failed', e);
+    }
+  };
+
+  /**
+   * checkReminders - basic in-app alerts for due/overdue tasks
+   */
+  const checkReminders = () => {
+    const now = Date.now();
+    const upcoming = todos.find(t => t.dueDate && !t.completed && new Date(t.dueDate).getTime() - now < 60 * 60 * 1000 && new Date(t.dueDate).getTime() - now > 0);
+    const overdue = todos.find(t => t.dueDate && !t.completed && new Date(t.dueDate).getTime() <= now);
+    if (overdue) {
+      setToast(`Overdue: ${overdue.text}`);
+      setTimeout(() => setToast(""), 4000);
+    } else if (upcoming) {
+      setToast(`Due soon: ${upcoming.text}`);
+      setTimeout(() => setToast(""), 4000);
+    }
+  };
+
   // ========================================
   // EVENT HANDLERS
   // ========================================
@@ -340,6 +419,38 @@ function App() {
               Add Task
             </button>
           </div>
+          {/* Scheduling controls */}
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <input
+              type="datetime-local"
+              value={dueDateInput}
+              onChange={(e) => setDueDateInput(e.target.value)}
+              className="px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <select
+              value={recurrenceInput}
+              onChange={(e) => setRecurrenceInput(e.target.value as any)}
+              className="px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="none">No recurrence</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+            <div className="flex items-center gap-3">
+              <button onClick={() => { setShowAnalytics(v => !v); if (!analytics) fetchAnalytics(); }} className="px-4 py-3 border rounded-lg text-slate-700 hover:bg-slate-50">Analytics</button>
+              <button onClick={() => setShowCalendar(v => !v)} className="px-4 py-3 border rounded-lg text-slate-700 hover:bg-slate-50">Calendar</button>
+            </div>
+          </div>
+          {/* Import/Export */}
+          <div className="mt-4 flex items-center gap-3">
+            <button onClick={() => exportTodos('json')} className="px-3 py-2 border rounded-lg text-slate-700 hover:bg-slate-50">Export JSON</button>
+            <button onClick={() => exportTodos('csv')} className="px-3 py-2 border rounded-lg text-slate-700 hover:bg-slate-50">Export CSV</button>
+            <label className="px-3 py-2 border rounded-lg text-slate-700 hover:bg-slate-50 cursor-pointer">
+              Import JSON
+              <input type="file" accept="application/json" onChange={(e) => { const f = e.target.files?.[0]; if (f) importTodos(f); e.currentTarget.value = ""; }} className="hidden" />
+            </label>
+          </div>
         </div>
 
         {/* ========== TODO LIST SECTION ========== */}
@@ -380,6 +491,71 @@ function App() {
             {/* Display count with proper grammar (task vs tasks) */}
             {todos.length} {todos.length === 1 ? "task" : "tasks"} in your list
           </div>
+        )}
+
+        {/* Analytics Panel */}
+        {showAnalytics && analytics && (
+          <div className="mt-6 bg-white rounded-lg shadow-md p-6">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+              <div>
+                <div className="text-slate-400 text-sm">Total</div>
+                <div className="text-xl font-semibold">{analytics.total}</div>
+              </div>
+              <div>
+                <div className="text-slate-400 text-sm">Completed</div>
+                <div className="text-xl font-semibold">{analytics.completed}</div>
+              </div>
+              <div>
+                <div className="text-slate-400 text-sm">Rate</div>
+                <div className="text-xl font-semibold">{Math.round(analytics.completionRate * 100)}%</div>
+              </div>
+              <div>
+                <div className="text-slate-400 text-sm">Avg time</div>
+                <div className="text-xl font-semibold">{Math.round(analytics.averageTimeToCompleteMs / 3600000)}h</div>
+              </div>
+              <div>
+                <div className="text-slate-400 text-sm">Streak</div>
+                <div className="text-xl font-semibold">{analytics.dailyCompletionStreak}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Calendar/Tomeline simple view: group by due date */}
+        {showCalendar && (
+          <div className="mt-6 bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-lg font-semibold mb-3">Timeline (by Due Date)</h2>
+            <div className="space-y-4">
+              {Object.entries(
+                todos
+                  .filter(t => t.dueDate)
+                  .sort((a,b) => new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime())
+                  .reduce((acc: Record<string, Todo[]>, t) => {
+                    const key = new Date(t.dueDate as string).toDateString();
+                    acc[key] = acc[key] || [];
+                    acc[key].push(t);
+                    return acc;
+                  }, {})
+              ).map(([date, items]) => (
+                <div key={date}>
+                  <div className="text-slate-500 text-sm mb-1">{date}</div>
+                  <ul className="list-disc list-inside text-slate-800">
+                    {items.map(i => (
+                      <li key={i._id}>{i.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {todos.filter(t => t.dueDate).length === 0 && (
+                <div className="text-slate-500">No scheduled tasks</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Simple toast */}
+        {toast && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg">{toast}</div>
         )}
       </div>
     </div>
